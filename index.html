@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monthly Financial Planner</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts for Cute Aesthetic -->
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    body {
+      font-family: 'Quicksand', sans-serif;
+      background-color: #FFF0F5;
+      background-image: radial-gradient(#FBCFE8 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    h1, h2, h3, h4, .font-heading {
+      font-family: 'Fredoka', cursive;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #FFF0F5;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #F472B6;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="text-pink-950 antialiased min-h-screen pb-10">
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const formatRp = (num) => {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0
+      }).format(num || 0);
+    };
+
+    function FinancialPlannerApp() {
+      const [currentUser, setCurrentUser] = useState(null);
+      const [usernameInput, setUsernameInput] = useState('');
+      const [pinInput, setPinInput] = useState('');
+      const [isRegistering, setIsRegistering] = useState(false);
+      const [authError, setAuthError] = useState('');
+
+      const [selectedMonth, setSelectedMonth] = useState('2026-10');
+      const [activeTab, setActiveTab] = useState('summary');
+
+      const [incomes, setIncomes] = useState([]);
+      const [expenses, setExpenses] = useState([]);
+      const [bills, setBills] = useState([]);
+      const [savings, setSavings] = useState([]);
+      const [debts, setDebts] = useState([]);
+      const [monthlyNote, setMonthlyNote] = useState('');
+
+      const [incomeForm, setIncomeForm] = useState({ title: '', amount: '', category: 'Utama', wallet: 'Bank A' });
+      const [expenseForm, setExpenseForm] = useState({ title: '', amount: '', category: 'Needs', method: 'Transfer', note: '' });
+      const [billForm, setBillForm] = useState({ title: '', amount: '', dueDate: '10', isPaid: false });
+      const [savingForm, setSavingForm] = useState({ name: '', target: '', current: 0 });
+      const [debtForm, setDebtForm] = useState({ person: '', amount: '', type: 'Hutang', status: 'Belum Lunas' });
+
+      useEffect(() => {
+        const savedSession = localStorage.getItem('planner_session');
+        if (savedSession) {
+          setCurrentUser(savedSession);
+        }
+      }, []);
+
+      useEffect(() => {
+        if (!currentUser) return;
+        const key = `planner_data_${currentUser}_${selectedMonth}`;
+        const savedData = localStorage.getItem(key);
+        if (savedData) {
+          const parsed = JSON.parse(savedData);
+          setIncomes(parsed.incomes || []);
+          setExpenses(parsed.expenses || []);
+          setBills(parsed.bills || []);
+          setSavings(parsed.savings || []);
+          setDebts(parsed.debts || []);
+          setMonthlyNote(parsed.monthlyNote || '');
+        } else {
+          setIncomes([]);
+          setExpenses([]);
+          setBills([]);
+          setSavings([]);
+          setDebts([]);
+          setMonthlyNote('');
+        }
+      }, [currentUser, selectedMonth]);
+
+      const saveData = (updatedData) => {
+        if (!currentUser) return;
+        const key = `planner_data_${currentUser}_${selectedMonth}`;
+        const fullData = {
+          incomes,
+          expenses,
+          bills,
+          savings,
+          debts,
+          monthlyNote,
+          ...updatedData
+        };
+        localStorage.setItem(key, JSON.stringify(fullData));
+      };
+
+      const handleAuth = (e) => {
+        e.preventDefault();
+        setAuthError('');
+        const accountsKey = 'planner_users_db';
+        const users = JSON.parse(localStorage.getItem(accountsKey) || '{}');
+        const cleanUser = usernameInput.trim().toLowerCase();
+
+        if (isRegistering) {
+          if (users[cleanUser]) {
+            setAuthError('ID Akun ini sudah ada! Silakan pakai ID lain.');
+            return;
+          }
+          if (pinInput.length < 4) {
+            setAuthError('PIN minimal 4 angka');
+            return;
+          }
+          users[cleanUser] = { pin: pinInput };
+          localStorage.setItem(accountsKey, JSON.stringify(users));
+          localStorage.setItem('planner_session', cleanUser);
+          setCurrentUser(cleanUser);
+        } else {
+          const user = users[cleanUser];
+          if (!user || user.pin !== pinInput) {
+            setAuthError('ID Akun atau PIN salah!');
+            return;
+          }
+          localStorage.setItem('planner_session', cleanUser);
+          setCurrentUser(cleanUser);
+        }
+      };
+
+      const handleLogout = () => {
+        localStorage.removeItem('planner_session');
+        setCurrentUser(null);
+        setUsernameInput('');
+        setPinInput('');
+      };
+
+      // Kalkulasi
+      const totalIncome = incomes.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+      const totalExpense = expenses.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+      const totalSavings = savings.reduce((acc, curr) => acc + Number(curr.current || 0), 0);
+      const remainingBalance = totalIncome - totalExpense;
+
+      // Pengeluaran per Kategori
+      const expNeeds = expenses.filter(e => e.category === 'Needs').reduce((acc, c) => acc + Number(c.amount || 0), 0);
+      const expWants = expenses.filter(e => e.category === 'Wants').reduce((acc, c) => acc + Number(c.amount || 0), 0);
+      const expFamily = expenses.filter(e => e.category === 'Family').reduce((acc, c) => acc + Number(c.amount || 0), 0);
+
+      const addIncome = (e) => {
+        e.preventDefault();
+        if (!incomeForm.title || !incomeForm.amount) return;
+        const updated = [...incomes, { ...incomeForm, id: Date.now(), amount: Number(incomeForm.amount) }];
+        setIncomes(updated);
+        saveData({ incomes: updated });
+        setIncomeForm({ title: '', amount: '', category: 'Utama', wallet: 'Bank A' });
+      };
+
+      const addExpense = (e) => {
+        e.preventDefault();
+        if (!expenseForm.title || !expenseForm.amount) return;
+        const updated = [...expenses, { ...expenseForm, id: Date.now(), amount: Number(expenseForm.amount) }];
+        setExpenses(updated);
+        saveData({ expenses: updated });
+        setExpenseForm({ title: '', amount: '', category: 'Needs', method: 'Transfer', note: '' });
+      };
+
+      const addBill = (e) => {
+        e.preventDefault();
+        if (!billForm.title || !billForm.amount) return;
+        const updated = [...bills, { ...billForm, id: Date.now(), amount: Number(billForm.amount) }];
+        setBills(updated);
+        saveData({ bills: updated });
+        setBillForm({ title: '', amount: '', dueDate: '10', isPaid: false });
+      };
+
+      const addSaving = (e) => {
+        e.preventDefault();
+        if (!savingForm.name || !savingForm.target) return;
+        const updated = [...savings, { ...savingForm, id: Date.now(), target: Number(savingForm.target), current: Number(savingForm.current || 0) }];
+        setSavings(updated);
+        saveData({ savings: updated });
+        setSavingForm({ name: '', target: '', current: 0 });
+      };
+
+      const addDepositToSaving = (id, addAmount) => {
+        const updated = savings.map(s => {
+          if (s.id === id) {
+            return { ...s, current: Number(s.current || 0) + Number(addAmount) };
+          }
+          return s;
+        });
+        setSavings(updated);
+        saveData({ savings: updated });
+      };
+
+      const addDebt = (e) => {
+        e.preventDefault();
+        if (!debtForm.person || !debtForm.amount) return;
+        const updated = [...debts, { ...debtForm, id: Date.now(), amount: Number(debtForm.amount) }];
+        setDebts(updated);
+        saveData({ debts: updated });
+        setDebtForm({ person: '', amount: '', type: 'Hutang', status: 'Belum Lunas' });
+      };
+
+      const toggleBillStatus = (id) => {
+        const updated = bills.map(b => b.id === id ? { ...b, isPaid: !b.isPaid } : b);
+        setBills(updated);
+        saveData({ bills: updated });
+      };
+
+      const exportCSV = () => {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "=== REKAP KEUANGAN ===\nBulan," + selectedMonth + "\n\n";
+        csvContent += "PEMASUKAN\nKeterangan,Jumlah,Kategori,Sumber\n";
+        incomes.forEach(i => { csvContent += `${i.title},${i.amount},${i.category},${i.wallet}\n`; });
+        csvContent += `Total Pemasukan,${totalIncome}\n\n`;
+        csvContent += "PENGELUARAN\nKeterangan,Jumlah,Kategori,Metode\n";
+        expenses.forEach(e => { csvContent += `${e.title},${e.amount},${e.category},${e.method}\n`; });
+        csvContent += `Total Pengeluaran,${totalExpense}\n\nSisa Uang,${remainingBalance}\n`;
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Rekap_Keuangan_${currentUser}_${selectedMonth}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      if (!currentUser) {
+        return (
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="bg-white/90 backdrop-blur p-8 rounded-3xl shadow-xl border-4 border-pink-200 max-w-md w-full text-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-3 bg-pink-300"></div>
+              <div className="w-20 h-20 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-3 border-2 border-pink-300">
+                <span className="text-4xl">🌸</span>
+              </div>
+              <h1 className="text-3xl font-bold text-pink-600 mb-1 font-heading">Welcome!</h1>
+              <p className="text-xs text-pink-400 mb-6 font-semibold">Financial Planner journey</p>
+
+              <form onSubmit={handleAuth} className="space-y-4">
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Masukkan ID Akun / Username"
+                    value={usernameInput}
+                    onChange={(e) => setUsernameInput(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border-2 border-pink-200 focus:border-pink-400 outline-none text-center font-bold text-pink-900 bg-pink-50/50"
+                    required
+                  />
+                </div>
+                <div>
+                  <input
+                    type="password"
+                    placeholder="Masukkan PIN"
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border-2 border-pink-200 focus:border-pink-400 outline-none text-center font-bold text-pink-900 bg-pink-50/50 tracking-widest text-lg"
+                    required
+                  />
+                </div>
+
+                {authError && <p className="text-xs text-rose-500 font-bold">{authError}</p>}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow-md border-b-4 border-pink-600 transition font-heading text-base"
+                >
+                  {isRegistering ? 'Buat Planner Baru' : 'Buka Planner Saya'}
+                </button>
+              </form>
+
+              <div className="mt-6 pt-4 border-t border-pink-100">
+                <button
+                  onClick={() => { setIsRegistering(!isRegistering); setAuthError(''); }}
+                  className="text-xs font-bold text-pink-500 hover:underline"
+                >
+                  {isRegistering ? 'Sudah punya akun? Masuk di sini' : 'Belum punya akun? Buat akun baru'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
+          {/* Header Planner */}
+          <header className="bg-white/90 backdrop-blur rounded-3xl p-5 shadow-sm border-2 border-pink-200 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🎀</span>
+              <div>
+                <h1 className="text-2xl font-bold text-pink-600 font-heading">Monthly Financial Planner</h1>
+                <p className="text-xs text-pink-400 font-semibold">Planner Milik: <span className="font-bold text-pink-600 uppercase">{currentUser}</span></p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-3 py-2 bg-pink-50 border-2 border-pink-200 rounded-2xl text-xs font-bold text-pink-800 outline-none"
+              />
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-600 text-xs font-bold rounded-2xl transition"
+              >
+                Ganti Akun
+              </button>
+            </div>
+          </header>
+
+          {/* Navigation Bar */}
+          <nav className="flex flex-wrap gap-2 p-1.5 bg-pink-200/50 rounded-2xl border border-pink-200 text-xs font-bold">
+            {[
+              { id: 'summary', label: '📖 Ringkasan (Summary)' },
+              { id: 'income', label: '💵 Pemasukan' },
+              { id: 'expense', label: '🛍️ Pengeluaran' },
+              { id: 'bills', label: '📅 Tagihan' },
+              { id: 'savings', label: '🫙 Tabungan & Jar' },
+              { id: 'debts', label: '🤝 Hutang & Piutang' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 py-2.5 px-3 rounded-xl transition text-center whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-pink-600 shadow-sm border border-pink-200 font-bold' : 'text-pink-800 hover:bg-white/50'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* TAB: RINGKASAN */}
+          {activeTab === 'summary' && (
+            <div className="space-y-6">
+              {/* Summary Header Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-emerald-50/90 border-2 border-emerald-200 p-4 rounded-3xl shadow-sm">
+                  <p className="text-[11px] font-bold text-emerald-600 mb-1">TOTAL PEMASUKAN</p>
+                  <p className="text-xl font-bold text-emerald-800 font-heading">{formatRp(totalIncome)}</p>
+                </div>
+                <div className="bg-rose-50/90 border-2 border-rose-200 p-4 rounded-3xl shadow-sm">
+                  <p className="text-[11px] font-bold text-rose-600 mb-1">TOTAL PENGELUARAN</p>
+                  <p className="text-xl font-bold text-rose-800 font-heading">{formatRp(totalExpense)}</p>
+                </div>
+                <div className="bg-pink-50/90 border-2 border-pink-200 p-4 rounded-3xl shadow-sm">
+                  <p className="text-[11px] font-bold text-pink-600 mb-1">TOTAL TABUNGAN</p>
+                  <p className="text-xl font-bold text-pink-800 font-heading">{formatRp(totalSavings)}</p>
+                </div>
+                <div className="bg-sky-50/90 border-2 border-sky-200 p-4 rounded-3xl shadow-sm">
+                  <p className="text-[11px] font-bold text-sky-600 mb-1">SISA SALDO (SAFE SPEND)</p>
+                  <p className="text-xl font-bold text-sky-800 font-heading">{formatRp(remainingBalance)}</p>
+                </div>
+              </div>
+
+              {/* Grid 2 Kolom: Ringkasan Kategori & Tagihan Pending */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Rincian Kategori Belanja (Cash Envelopes / Expense Breakdown) */}
+                <div className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                  <h3 className="font-bold text-pink-600 text-lg font-heading flex items-center gap-2">
+                    <span>✉️</span> Breakdown Kategori Pengeluaran
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-pink-50/50 rounded-2xl border border-pink-100 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-pink-900 text-sm">Needs (Kebutuhan Pokok)</p>
+                        <p className="text-xs text-pink-400">Makan, Transport, Belanja</p>
+                      </div>
+                      <span className="font-bold text-pink-700">{formatRp(expNeeds)}</span>
+                    </div>
+
+                    <div className="p-3 bg-pink-50/50 rounded-2xl border border-pink-100 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-pink-900 text-sm">Wants (Keinginan / Hiburan)</p>
+                        <p className="text-xs text-pink-400">Jajan, Hobi, Skincare</p>
+                      </div>
+                      <span className="font-bold text-pink-700">{formatRp(expWants)}</span>
+                    </div>
+
+                    <div className="p-3 bg-pink-50/50 rounded-2xl border border-pink-100 flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-pink-900 text-sm">Kirim Keluarga / Rekan</p>
+                        <p className="text-xs text-pink-400">Transfer Rutin</p>
+                      </div>
+                      <span className="font-bold text-pink-700">{formatRp(expFamily)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Tagihan Mendatang */}
+                <div className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                  <h3 className="font-bold text-pink-600 text-lg font-heading flex items-center gap-2">
+                    <span>⏰</span> Tagihan Belum Dibayar
+                  </h3>
+                  <div className="space-y-3">
+                    {bills.filter(b => !b.isPaid).length === 0 ? (
+                      <p className="text-xs text-pink-400 italic">Semua tagihan bulan ini sudah lunas! ✨</p>
+                    ) : (
+                      bills.filter(b => !b.isPaid).map(b => (
+                        <div key={b.id} className="p-3 bg-amber-50 rounded-2xl border border-amber-200 flex justify-between items-center">
+                          <div>
+                            <p className="font-bold text-amber-900 text-sm">{b.title}</p>
+                            <p className="text-xs text-amber-600 font-semibold">Jatuh Tempo: Tgl {b.dueDate}</p>
+                          </div>
+                          <span className="font-bold text-amber-800">{formatRp(b.amount)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Catatan / Evaluasi Bulanan */}
+              <div className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm">
+                <h3 className="font-bold text-pink-600 mb-2 flex items-center gap-2 font-heading text-lg">
+                  <span>📝</span> Evaluasi & Monthly Review
+                </h3>
+                <textarea
+                  value={monthlyNote}
+                  onChange={(e) => { setMonthlyNote(e.target.value); saveData({ monthlyNote: e.target.value }); }}
+                  placeholder="Tuliskan catatan evaluasi bulan ini! (misal: 'Bulan ini hemat di jajan, fokus penuhi dana darurat')..."
+                  className="w-full p-4 rounded-2xl border-2 border-pink-100 bg-pink-50/30 text-sm outline-none focus:border-pink-300 min-h-[100px]"
+                ></textarea>
+              </div>
+
+              {/* Tombol Export */}
+              <div className="flex justify-end">
+                <button
+                  onClick={exportCSV}
+                  className="px-5 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl shadow border-b-4 border-emerald-700 text-sm transition font-heading"
+                >
+                  📥 Export Rekap ke Excel / CSV
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* PEMASUKAN TAB */}
+          {activeTab === 'income' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <form onSubmit={addIncome} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-pink-600 text-lg font-heading">+ Tambah Pemasukan</h3>
+                <input
+                  type="text"
+                  placeholder="Keterangan (Gaji, Bonus)"
+                  value={incomeForm.title}
+                  onChange={e => setIncomeForm({ ...incomeForm, title: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none focus:border-pink-300 bg-pink-50/20"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Nominal (Rp)"
+                  value={incomeForm.amount}
+                  onChange={e => setIncomeForm({ ...incomeForm, amount: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none focus:border-pink-300 bg-pink-50/20"
+                  required
+                />
+                <select
+                  value={incomeForm.category}
+                  onChange={e => setIncomeForm({ ...incomeForm, category: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-white"
+                >
+                  <option value="Utama">Pemasukan Utama</option>
+                  <option value="Tambahan">Pemasukan Tambahan</option>
+                  <option value="Bonus/Hadiah">Bonus / Cashback / Hadiah</option>
+                </select>
+                <select
+                  value={incomeForm.wallet}
+                  onChange={e => setIncomeForm({ ...incomeForm, wallet: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-white"
+                >
+                  <option value="Bank A">Bank Utama / Payroll</option>
+                  <option value="Bank B">Bank Tabungan</option>
+                  <option value="E-Wallet">E-Wallet</option>
+                  <option value="Cash">Cash / Tunai</option>
+                </select>
+                <button type="submit" className="w-full py-3 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow border-b-4 border-pink-600 font-heading">Simpan Pemasukan</button>
+              </form>
+
+              <div className="md:col-span-2 bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm">
+                <h3 className="font-bold text-pink-600 text-lg mb-4 font-heading">Daftar Pemasukan</h3>
+                <div className="space-y-3">
+                  {incomes.length === 0 ? <p className="text-sm text-pink-300 italic">Belum ada pemasukan dicatat.</p> : incomes.map(inc => (
+                    <div key={inc.id} className="p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-pink-900">{inc.title}</p>
+                        <p className="text-xs text-pink-400 font-semibold">{inc.category} • {inc.wallet}</p>
+                      </div>
+                      <span className="font-bold text-emerald-600 text-base font-heading">+{formatRp(inc.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PENGELUARAN TAB */}
+          {activeTab === 'expense' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <form onSubmit={addExpense} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-pink-600 text-lg font-heading">+ Catat Pengeluaran</h3>
+                <input
+                  type="text"
+                  placeholder="Keterangan Pengeluaran"
+                  value={expenseForm.title}
+                  onChange={e => setExpenseForm({ ...expenseForm, title: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none focus:border-pink-300 bg-pink-50/20"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Nominal (Rp)"
+                  value={expenseForm.amount}
+                  onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none focus:border-pink-300 bg-pink-50/20"
+                  required
+                />
+                <select
+                  value={expenseForm.category}
+                  onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-white"
+                >
+                  <option value="Needs">Needs (Kebutuhan Pokok)</option>
+                  <option value="Wants">Wants (Keinginan / Hiburan)</option>
+                  <option value="Family">Kirim Ke Keluarga / Rekan</option>
+                </select>
+                <select
+                  value={expenseForm.method}
+                  onChange={e => setExpenseForm({ ...expenseForm, method: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-white"
+                >
+                  <option value="Cash">Cash / Tunai</option>
+                  <option value="Transfer">Transfer Bank</option>
+                  <option value="E-Wallet">E-Wallet</option>
+                  <option value="Paylater">Paylater</option>
+                </select>
+                <button type="submit" className="w-full py-3 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow border-b-4 border-pink-600 font-heading">Simpan Pengeluaran</button>
+              </form>
+
+              <div className="md:col-span-2 bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm">
+                <h3 className="font-bold text-pink-600 text-lg mb-4 font-heading">Riwayat Pengeluaran</h3>
+                <div className="space-y-3">
+                  {expenses.length === 0 ? <p className="text-sm text-pink-300 italic">Belum ada pengeluaran.</p> : expenses.map(exp => (
+                    <div key={exp.id} className="p-4 bg-rose-50/60 border border-rose-100 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-pink-900">{exp.title}</p>
+                        <p className="text-xs text-pink-400 font-semibold">{exp.category} • Via {exp.method}</p>
+                      </div>
+                      <span className="font-bold text-rose-600 text-base font-heading">-{formatRp(exp.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAGIHAN TAB */}
+          {activeTab === 'bills' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <form onSubmit={addBill} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-pink-600 text-lg font-heading">+ Tambah Tagihan</h3>
+                <input
+                  type="text"
+                  placeholder="Nama Tagihan (Listrik, Wifi)"
+                  value={billForm.title}
+                  onChange={e => setBillForm({ ...billForm, title: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Nominal (Rp)"
+                  value={billForm.amount}
+                  onChange={e => setBillForm({ ...billForm, amount: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Tanggal Jatuh Tempo (1-31)"
+                  value={billForm.dueDate}
+                  onChange={e => setBillForm({ ...billForm, dueDate: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  min="1" max="31"
+                  required
+                />
+                <button type="submit" className="w-full py-3 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow border-b-4 border-pink-600 font-heading">Simpan Tagihan</button>
+              </form>
+
+              <div className="md:col-span-2 bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm">
+                <h3 className="font-bold text-pink-600 text-lg mb-4 font-heading">Daftar Tagihan & Langganan</h3>
+                <div className="space-y-3">
+                  {bills.length === 0 ? <p className="text-sm text-pink-300 italic">Belum ada tagihan.</p> : bills.map(b => (
+                    <div key={b.id} className="p-4 border border-pink-100 rounded-2xl flex justify-between items-center bg-pink-50/20">
+                      <div>
+                        <p className="font-bold text-pink-900">{b.title}</p>
+                        <p className="text-xs text-pink-400 font-semibold">Jatuh Tempo Tgl {b.dueDate} • {formatRp(b.amount)}</p>
+                      </div>
+                      <button
+                        onClick={() => toggleBillStatus(b.id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition ${b.isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+                      >
+                        {b.isPaid ? '✓ Lunas' : 'Belum Bayar'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TABUNGAN & JAR TAB */}
+          {activeTab === 'savings' && (
+            <div className="space-y-6">
+              <form onSubmit={addSaving} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm flex flex-wrap gap-4 items-end">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs font-bold text-pink-500 mb-1 block">Tujuan Tabungan / Sinking Fund</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Dana Darurat, Beli HP"
+                    value={savingForm.name}
+                    onChange={e => setSavingForm({ ...savingForm, name: e.target.value })}
+                    className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                    required
+                  />
+                </div>
+                <div className="flex-1 min-w-[150px]">
+                  <label className="text-xs font-bold text-pink-500 mb-1 block">Target Total (Rp)</label>
+                  <input
+                    type="number"
+                    placeholder="Target Rp"
+                    value={savingForm.target}
+                    onChange={e => setSavingForm({ ...savingForm, target: e.target.value })}
+                    className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                    required
+                  />
+                </div>
+                <div className="flex-1 min-w-[150px]">
+                  <label className="text-xs font-bold text-pink-500 mb-1 block">Terkumpul Saat Ini (Rp)</label>
+                  <input
+                    type="number"
+                    placeholder="Sudah ada Rp"
+                    value={savingForm.current}
+                    onChange={e => setSavingForm({ ...savingForm, current: e.target.value })}
+                    className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  />
+                </div>
+                <button type="submit" className="py-3 px-6 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow border-b-4 border-pink-600 font-heading">Buat Jar Tabungan</button>
+              </form>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {savings.length === 0 ? (
+                  <p className="text-sm text-pink-300 col-span-3 text-center py-8 italic">Belum ada Jar tabungan yang dibuat.</p>
+                ) : savings.map(s => {
+                  const percent = Math.min(100, Math.round((s.current / s.target) * 100) || 0);
+                  return (
+                    <div key={s.id} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm text-center relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="w-24 h-32 mx-auto mb-3 border-4 border-pink-300 rounded-b-3xl rounded-t-lg relative overflow-hidden bg-pink-50/30">
+                          <div
+                            className="absolute bottom-0 w-full bg-pink-300 transition-all duration-500"
+                            style={{ height: `${percent}%` }}
+                          ></div>
+                          <span className="absolute inset-0 flex items-center justify-center font-bold text-pink-900 text-sm font-heading">{percent}%</span>
+                        </div>
+                        <h4 className="font-bold text-pink-900 text-base font-heading">{s.name}</h4>
+                        <p className="text-xs text-pink-400 font-semibold mt-1">{formatRp(s.current)} / {formatRp(s.target)}</p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const addVal = prompt(`Tambah tabungan untuk "${s.name}" (Rp):`);
+                          if (addVal && !isNaN(addVal)) {
+                            addDepositToSaving(s.id, addVal);
+                          }
+                        }}
+                        className="mt-4 py-2 px-4 bg-pink-100 hover:bg-pink-200 text-pink-700 text-xs font-bold rounded-xl transition"
+                      >
+                        + Tambah Setoran
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* HUTANG & PIUTANG TAB */}
+          {activeTab === 'debts' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <form onSubmit={addDebt} className="bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-pink-600 text-lg font-heading">+ Hutang / Piutang</h3>
+                <input
+                  type="text"
+                  placeholder="Nama Orang / Nama Aplikasi"
+                  value={debtForm.person}
+                  onChange={e => setDebtForm({ ...debtForm, person: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  required
+                />
+                <input
+                  type="number"
+                  placeholder="Nominal (Rp)"
+                  value={debtForm.amount}
+                  onChange={e => setDebtForm({ ...debtForm, amount: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-pink-50/20"
+                  required
+                />
+                <select
+                  value={debtForm.type}
+                  onChange={e => setDebtForm({ ...debtForm, type: e.target.value })}
+                  className="w-full p-3 border-2 border-pink-100 rounded-2xl text-sm outline-none bg-white"
+                >
+                  <option value="Hutang">Hutang Saya (Harus Dibayar)</option>
+                  <option value="Piutang">Piutang Saya (Dipinjam Orang)</option>
+                </select>
+                <button type="submit" className="w-full py-3 bg-pink-400 hover:bg-pink-500 text-white font-bold rounded-2xl shadow border-b-4 border-pink-600 font-heading">Simpan Catatan</button>
+              </form>
+
+              <div className="md:col-span-2 bg-white/90 p-6 rounded-3xl border-2 border-pink-200 shadow-sm">
+                <h3 className="font-bold text-pink-600 text-lg mb-4 font-heading">Catatan Pinjaman</h3>
+                <div className="space-y-3">
+                  {debts.length === 0 ? <p className="text-sm text-pink-300 italic">Belum ada catatan hutang/piutang.</p> : debts.map(d => (
+                    <div key={d.id} className="p-4 border border-pink-100 rounded-2xl flex justify-between items-center bg-pink-50/20">
+                      <div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase ${d.type === 'Hutang' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {d.type}
+                        </span>
+                        <p className="font-bold text-pink-900 mt-1">{d.person}</p>
+                        <p className="text-xs text-pink-400 font-semibold">{formatRp(d.amount)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<FinancialPlannerApp />);
+  </script>
+</body>
+</html>
